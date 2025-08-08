@@ -4,6 +4,7 @@ import os
 import tweepy
 from time import sleep
 import logging
+from datetime import datetime
 
 # Loglama ayarları
 logging.basicConfig(
@@ -61,13 +62,22 @@ def get_kayserispor_count():
         return None
 
 def load_last_count():
-    """Son kayıtlı sayıyı yükler"""
+    """Son kayıtlı sayıyı yükler (önce environment variable, sonra dosya)"""
     try:
+        # Önce environment variable'dan kontrol et
+        env_count = os.getenv("LAST_COUNT")
+        if env_count:
+            count = int(env_count)
+            logger.info(f"Environment variable'dan son sayı yüklendi: {count}")
+            return count
+        
+        # Dosyadan kontrol et
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
-                logger.info(f"Son kayıtlı sayı yüklendi: {data['count']}")
+                logger.info(f"Dosyadan son sayı yüklendi: {data['count']}")
                 return data["count"]
+        
         logger.info("Önceki kayıt bulunamadı, ilk çalıştırma")
         return None
     except Exception as e:
@@ -75,11 +85,16 @@ def load_last_count():
         return None
 
 def save_last_count(count):
-    """Yeni sayıyı kaydeder"""
+    """Yeni sayıyı kaydeder (hem dosyaya hem environment variable'a)"""
     try:
+        # Dosyaya kaydet
         with open(STATE_FILE, "w") as f:
             json.dump({"count": count}, f)
-        logger.info(f"Yeni sayı kaydedildi: {count}")
+        logger.info(f"Yeni sayı dosyaya kaydedildi: {count}")
+        
+        # Environment variable'a kaydet (Railway'de kalıcı olması için)
+        os.environ["LAST_COUNT"] = str(count)
+        logger.info(f"Yeni sayı environment variable'a kaydedildi: {count}")
     except Exception as e:
         logger.error(f"Sayı kaydetme hatası: {e}")
 
@@ -118,16 +133,17 @@ def main():
                 continue
                 
             last_count = load_last_count()
+            current_time = datetime.now().strftime("%H:%M")
 
             if last_count is None:
                 # İlk çalıştırma
-                tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var."
+                tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var. (Güncelleme: {current_time})"
                 if send_tweet(tweet_text):
                     save_last_count(current_count)
 
             elif current_count != last_count:
                 # Değişiklik var
-                tweet_text = f"Kayserispor dosya sayısında değişiklik var! Yeni sayı: {current_count}"
+                tweet_text = f"Kayserispor dosya sayısında değişiklik var! Yeni sayı: {current_count} (Güncelleme: {current_time})"
                 if send_tweet(tweet_text):
                     save_last_count(current_count)
             else:
