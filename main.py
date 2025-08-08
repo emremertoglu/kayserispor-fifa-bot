@@ -65,7 +65,7 @@ def get_kayserispor_count():
         return None
 
 def get_tff_kadro():
-    """TFF sitesinden Galatasaray faal kadrosunu alır - postback sonrası dinamik tablo arar"""
+    """TFF sitesinden Galatasaray faal kadrosunu alır - sadece Ara butonuna tıklar"""
     try:
         # İlk olarak sayfayı ziyaret edip form verilerini al
         session = requests.Session()
@@ -96,13 +96,13 @@ def get_tff_kadro():
         if eventvalidation:
             form_data['__EVENTVALIDATION'] = eventvalidation.get('value', '')
         
-        # Sadece Ara butonunu tetikle - dropdown'lar zaten dolu
+        # Sadece Ara butonunu tetikle
         form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
         
         logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
         logger.info(f"Form verileri: {form_data}")
         
-        # POST request ile kadro verilerini çek (postback)
+        # POST request ile kadro verilerini çek
         response = session.post(url, data=form_data, headers=headers, timeout=30)
         response.raise_for_status()
         
@@ -116,6 +116,10 @@ def get_tff_kadro():
         page_title = soup.title.get_text() if soup.title else "Başlık yok"
         logger.info(f"Sayfa başlığı: {page_title}")
         
+        # Tüm tabloları kontrol et
+        all_tables = soup.find_all('table', id=True)
+        logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
+        
         # Sadece oyuncu tablosunu bul - dinamik olarak ara
         kadro_data = []
         
@@ -125,8 +129,6 @@ def get_tff_kadro():
         if not oyuncu_tablosu:
             # Eğer bulunamazsa, tüm tabloları kontrol et
             logger.info("Beklenen tablo ID bulunamadı, tüm tabloları kontrol ediliyor...")
-            all_tables = soup.find_all('table', id=True)
-            logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
             
             # Kadro tablosunu bul - "grdKadro" içeren ID'yi ara
             for table in all_tables:
