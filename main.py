@@ -65,11 +65,11 @@ def get_kayserispor_count():
         return None
 
 def get_tff_kadro():
-    """TFF sitesinden Kayserispor faal kadrosunu alır"""
+    """TFF sitesinden Galatasaray faal kadrosunu alır"""
     try:
         # İlk olarak sayfayı ziyaret edip form verilerini al
         session = requests.Session()
-        url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=72"
+        url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
@@ -112,29 +112,59 @@ def get_tff_kadro():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Faal kadro tablosunu bul
+        # Faal kadro tablosunu bul - daha spesifik arama
         kadro_data = []
         
-        # Kadro tablosunu ara (GridView veya DataGrid)
-        tables = soup.find_all('table')
+        # GridView veya DataGrid tablolarını ara
+        tables = soup.find_all('table', {'class': ['GridView', 'DataGrid', 'table']})
         
-        for table in tables:
+        if not tables:
+            # Class olmadan tüm tabloları dene
+            tables = soup.find_all('table')
+        
+        logger.info(f"Bulunan tablo sayısı: {len(tables)}")
+        
+        for table_index, table in enumerate(tables):
             rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all('td')
+            logger.info(f"Tablo {table_index + 1}: {len(rows)} satır")
+            
+            for row_index, row in enumerate(rows):
+                cells = row.find_all(['td', 'th'])
+                
                 if len(cells) >= 3:  # En az 3 sütun varsa
                     try:
-                        oyuncu_adi = cells[0].get_text(strip=True)
+                        # İlk hücrenin içeriğini kontrol et
+                        first_cell_text = cells[0].get_text(strip=True)
+                        
+                        # Eğer bu satır başlık satırıysa veya geçersizse atla
+                        if (first_cell_text in ['Oyuncu Adı', 'Ad Soyad', 'Sıra', 'No'] or 
+                            len(first_cell_text) < 3 or 
+                            first_cell_text.isdigit() or
+                            'Kulüp Kodu' in first_cell_text or
+                            'Adres' in first_cell_text):
+                            continue
+                        
+                        oyuncu_adi = first_cell_text
                         pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
                         lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
                         
-                        if oyuncu_adi and len(oyuncu_adi) > 2:  # Geçerli oyuncu adı
+                        # Geçerli oyuncu adı kontrolü
+                        if (oyuncu_adi and 
+                            len(oyuncu_adi) > 2 and 
+                            not oyuncu_adi.isdigit() and
+                            'Kulüp' not in oyuncu_adi and
+                            'Adres' not in oyuncu_adi):
+                            
                             kadro_data.append({
                                 'ad': oyuncu_adi,
                                 'pozisyon': pozisyon,
                                 'lisans_durumu': lisans_durumu
                             })
-                    except:
+                            
+                            logger.info(f"Oyuncu bulundu: {oyuncu_adi} - {pozisyon} - {lisans_durumu}")
+                            
+                    except Exception as e:
+                        logger.warning(f"Satır işleme hatası (Tablo {table_index + 1}, Satır {row_index + 1}): {e}")
                         continue
         
         logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
@@ -145,7 +175,9 @@ def get_tff_kadro():
             for i, oyuncu in enumerate(kadro_data[:5]):
                 logger.info(f"  {i+1}. {oyuncu['ad']} - {oyuncu['pozisyon']} - {oyuncu['lisans_durumu']}")
         else:
-            logger.warning("TFF'den oyuncu verisi alınamadı. Form verilerini kontrol edin.")
+            logger.warning("TFF'den oyuncu verisi alınamadı. HTML içeriğini kontrol edin.")
+            # Debug için HTML içeriğini logla
+            logger.debug(f"HTML içeriği: {soup.prettify()[:1000]}")
         
         return kadro_data
         
@@ -206,13 +238,39 @@ def save_tff_kadro(kadro_data):
         logger.error(f"TFF kadro kaydetme hatası: {e}")
 
 def check_lisans_degisiklikleri(eski_kadro, yeni_kadro):
-    """Lisans durumu değişikliklerini kontrol eder"""
+    """Kadro değişikliklerini kontrol eder (yeni oyuncu, çıkan oyuncu, lisans değişikliği)"""
     if not eski_kadro or not yeni_kadro:
         return []
     
     degisiklikler = []
     
     # Eski kadrodaki oyuncuları kontrol et
+    eski_oyuncu_isimleri = {oyuncu.get('ad', '') for oyuncu in eski_kadro}
+    yeni_oyuncu_isimleri = {oyuncu.get('ad', '') for oyuncu in yeni_kadro}
+    
+    # Yeni eklenen oyuncular
+    yeni_eklenenler = yeni_oyuncu_isimleri - eski_oyuncu_isimleri
+    for yeni_oyuncu in yeni_kadro:
+        if yeni_oyuncu.get('ad', '') in yeni_eklenenler:
+            degisiklikler.append({
+                'tip': 'yeni_oyuncu',
+                'oyuncu': yeni_oyuncu.get('ad', ''),
+                'pozisyon': yeni_oyuncu.get('pozisyon', ''),
+                'lisans_durumu': yeni_oyuncu.get('lisans_durumu', '')
+            })
+    
+    # Çıkan oyuncular
+    cikan_oyuncular = eski_oyuncu_isimleri - yeni_oyuncu_isimleri
+    for eski_oyuncu in eski_kadro:
+        if eski_oyuncu.get('ad', '') in cikan_oyuncular:
+            degisiklikler.append({
+                'tip': 'cikan_oyuncu',
+                'oyuncu': eski_oyuncu.get('ad', ''),
+                'pozisyon': eski_oyuncu.get('pozisyon', ''),
+                'lisans_durumu': eski_oyuncu.get('lisans_durumu', '')
+            })
+    
+    # Lisans durumu değişiklikleri
     for eski_oyuncu in eski_kadro:
         eski_ad = eski_oyuncu.get('ad', '')
         eski_lisans = eski_oyuncu.get('lisans_durumu', '')
@@ -224,6 +282,7 @@ def check_lisans_degisiklikleri(eski_kadro, yeni_kadro):
             
             if eski_ad == yeni_ad and eski_lisans != yeni_lisans:
                 degisiklikler.append({
+                    'tip': 'lisans_degisikligi',
                     'oyuncu': eski_ad,
                     'pozisyon': yeni_oyuncu.get('pozisyon', ''),
                     'eski_durum': eski_lisans,
@@ -310,15 +369,19 @@ def main():
                     degisiklikler = check_lisans_degisiklikleri(last_kadro, current_kadro)
                     
                     if degisiklikler:
-                        logger.info(f"TFF: {len(degisiklikler)} lisans değişikliği bulundu:")
+                        logger.info(f"TFF: {len(degisiklikler)} kadro değişikliği bulundu:")
                         for degisiklik in degisiklikler:
-                            logger.info(f"  {degisiklik['oyuncu']} ({degisiklik['pozisyon']}): {degisiklik['eski_durum']} → {degisiklik['yeni_durum']}")
-                            # Tweet atmıyoruz, sadece logda gösteriyoruz
+                            if degisiklik['tip'] == 'yeni_oyuncu':
+                                logger.info(f"  Yeni Oyuncu: {degisiklik['oyuncu']} ({degisiklik['pozisyon']})")
+                            elif degisiklik['tip'] == 'cikan_oyuncu':
+                                logger.info(f"  Çıkan Oyuncu: {degisiklik['oyuncu']} ({degisiklik['pozisyon']})")
+                            elif degisiklik['tip'] == 'lisans_degisikligi':
+                                logger.info(f"  Lisans Değişikliği: {degisiklik['oyuncu']} ({degisiklik['pozisyon']}): {degisiklik['eski_durum']} → {degisiklik['yeni_durum']}")
                         
                         # Yeni kadroyu kaydet
                         save_tff_kadro(current_kadro)
                     else:
-                        logger.info(f"TFF: Lisans değişikliği yok. {len(current_kadro)} oyuncu")
+                        logger.info(f"TFF: Kadro değişikliği yok. {len(current_kadro)} oyuncu")
 
         except Exception as e:
             logger.error(f"Beklenmeyen hata: {e}")
