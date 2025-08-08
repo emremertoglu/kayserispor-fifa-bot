@@ -1,1 +1,1 @@
-worker: python test_curl.py
+worker: python main.py

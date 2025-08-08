@@ -27,44 +27,44 @@ if not all([API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET]):
     exit(1)
 
 try:
-    auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
-    api = tweepy.API(auth)
-    logger.info("Twitter API bağlantısı başarılı")
+    # Twitter API v2 için client oluştur
+    client = tweepy.Client(
+        consumer_key=API_KEY,
+        consumer_secret=API_SECRET,
+        access_token=ACCESS_TOKEN,
+        access_token_secret=ACCESS_SECRET
+    )
+    logger.info("Twitter API v2 bağlantısı başarılı")
 except Exception as e:
-    logger.error(f"Twitter API bağlantısı başarısız: {e}")
+    logger.error(f"Twitter API v2 bağlantısı başarısız: {e}")
     exit(1)
 
 STATE_FILE = "kayseri_count.json"
 
 def test_twitter_api():
-    """Twitter API'yi test eder"""
-    logger.info("=== TWITTER API TEST BAŞLIYOR ===")
+    """Twitter API v2'yi test eder"""
+    logger.info("=== TWITTER API v2 TEST BAŞLIYOR ===")
     
     try:
-        # Kullanıcı bilgilerini al
-        user = api.verify_credentials()
-        logger.info(f"✅ Twitter API bağlantısı başarılı!")
-        logger.info(f"✅ Kullanıcı: @{user.screen_name}")
-        logger.info(f"✅ Hesap adı: {user.name}")
-        
         # Tweet atma yetkisini test et
-        try:
-            test_text = "Test tweet - Kayserispor FIFA Bot"
-            api.update_status(test_text)
+        test_text = "Test tweet - Kayserispor FIFA Bot"
+        response = client.create_tweet(text=test_text)
+        
+        if response.data:
             logger.info("✅ Tweet atma yetkisi var!")
+            logger.info(f"✅ Tweet ID: {response.data['id']}")
             
             # Test tweet'ini sil
-            api.destroy_status(api.user_timeline(count=1)[0].id)
+            client.delete_tweet(response.data['id'])
             logger.info("✅ Test tweet silindi!")
             return True
-            
-        except tweepy.errors.Forbidden as e:
-            logger.error(f"❌ Tweet atma yetkisi yok: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"❌ Tweet atma hatası: {e}")
+        else:
+            logger.error("❌ Tweet atılamadı")
             return False
             
+    except tweepy.errors.Forbidden as e:
+        logger.error(f"❌ Tweet atma yetkisi yok: {e}")
+        return False
     except tweepy.errors.Unauthorized as e:
         logger.error(f"❌ Twitter API yetkilendirme hatası: {e}")
         return False
@@ -138,12 +138,12 @@ def main():
     
     # Test modu aktifse Twitter API'yi test et
     if TEST_MODE:
-        logger.info("Test modu aktif - Twitter API test ediliyor...")
+        logger.info("Test modu aktif - Twitter API v2 test ediliyor...")
         test_success = test_twitter_api()
         if test_success:
-            logger.info("✅ Twitter API test başarılı!")
+            logger.info("✅ Twitter API v2 test başarılı!")
         else:
-            logger.error("❌ Twitter API test başarısız!")
+            logger.error("❌ Twitter API v2 test başarısız!")
         logger.info("Test modu tamamlandı, bot durduruluyor...")
         return
     
@@ -161,9 +161,13 @@ def main():
             if last_count is None:
                 tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var."
                 try:
-                    api.update_status(tweet_text)
-                    save_last_count(current_count)
-                    logger.info(f"İlk tweet atıldı: {tweet_text}")
+                    response = client.create_tweet(text=tweet_text)
+                    if response.data:
+                        save_last_count(current_count)
+                        logger.info(f"İlk tweet atıldı: {tweet_text}")
+                        logger.info(f"Tweet ID: {response.data['id']}")
+                    else:
+                        logger.error("Tweet atılamadı")
                 except tweepy.errors.Forbidden as e:
                     logger.error(f"Twitter API erişim hatası (403): {e}")
                     logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
@@ -176,9 +180,13 @@ def main():
             elif current_count != last_count:
                 tweet_text = f"Kayserispor dosya sayısında değişiklik var! Yeni sayı: {current_count}"
                 try:
-                    api.update_status(tweet_text)
-                    save_last_count(current_count)
-                    logger.info(f"Değişiklik tweet atıldı: {tweet_text}")
+                    response = client.create_tweet(text=tweet_text)
+                    if response.data:
+                        save_last_count(current_count)
+                        logger.info(f"Değişiklik tweet atıldı: {tweet_text}")
+                        logger.info(f"Tweet ID: {response.data['id']}")
+                    else:
+                        logger.error("Tweet atılamadı")
                 except tweepy.errors.Forbidden as e:
                     logger.error(f"Twitter API erişim hatası (403): {e}")
                     logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
