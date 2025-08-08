@@ -11,6 +11,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Loglama ayarları
 logging.basicConfig(
@@ -88,7 +90,10 @@ def get_tff_kadro():
         chrome_options.binary_location = "/usr/bin/chromium-browser"
         
         logger.info("Selenium WebDriver başlatılıyor...")
-        driver = webdriver.Chrome(options=chrome_options)
+        
+        # webdriver-manager ile otomatik ChromeDriver yönetimi
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
         try:
             url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
