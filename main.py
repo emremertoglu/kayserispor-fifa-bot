@@ -110,20 +110,36 @@ def main():
 
             if last_count is None:
                 tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var."
-                api.update_status(tweet_text)
-                save_last_count(current_count)
-                logger.info(f"İlk tweet atıldı: {tweet_text}")
+                try:
+                    api.update_status(tweet_text)
+                    save_last_count(current_count)
+                    logger.info(f"İlk tweet atıldı: {tweet_text}")
+                except tweepy.errors.Forbidden as e:
+                    logger.error(f"Twitter API erişim hatası (403): {e}")
+                    logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
+                except tweepy.errors.Unauthorized as e:
+                    logger.error(f"Twitter API yetkilendirme hatası (401): {e}")
+                    logger.error("Twitter API anahtarlarınızı kontrol edin.")
+                except Exception as e:
+                    logger.error(f"Twitter API beklenmeyen hata: {e}")
 
             elif current_count != last_count:
                 tweet_text = f"Kayserispor dosya sayısında değişiklik var! Yeni sayı: {current_count}"
-                api.update_status(tweet_text)
-                save_last_count(current_count)
-                logger.info(f"Değişiklik tweet atıldı: {tweet_text}")
+                try:
+                    api.update_status(tweet_text)
+                    save_last_count(current_count)
+                    logger.info(f"Değişiklik tweet atıldı: {tweet_text}")
+                except tweepy.errors.Forbidden as e:
+                    logger.error(f"Twitter API erişim hatası (403): {e}")
+                    logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
+                except tweepy.errors.Unauthorized as e:
+                    logger.error(f"Twitter API yetkilendirme hatası (401): {e}")
+                    logger.error("Twitter API anahtarlarınızı kontrol edin.")
+                except Exception as e:
+                    logger.error(f"Twitter API beklenmeyen hata: {e}")
             else:
                 logger.info(f"Değişiklik yok. Mevcut sayı: {current_count}")
 
-        except tweepy.TweepError as e:
-            logger.error(f"Twitter API hatası: {e}")
         except Exception as e:
             logger.error(f"Beklenmeyen hata: {e}")
 
