@@ -65,7 +65,7 @@ def get_kayserispor_count():
         return None
 
 def get_tff_kadro():
-    """TFF sitesinden Galatasaray faal kadrosunu alır"""
+    """TFF sitesinden Galatasaray faal kadrosunu alır - spesifik ID'lerle"""
     try:
         # İlk olarak sayfayı ziyaret edip form verilerini al
         session = requests.Session()
@@ -96,13 +96,8 @@ def get_tff_kadro():
         if eventvalidation:
             form_data['__EVENTVALIDATION'] = eventvalidation.get('value', '')
         
-        # Kadro arama form verilerini ekle
-        form_data.update({
-            'ctl00$ContentPlaceHolder1$ddlSezon': '2025-2026',  # Sezon
-            'ctl00$ContentPlaceHolder1$ddlStatus': 'Profesyonel',  # Statü
-            'ctl00$ContentPlaceHolder1$ddlDurum': 'Faal',  # Durum
-            'ctl00$ContentPlaceHolder1$btnAra': 'Ara'  # Ara butonu
-        })
+        # Ara butonunu tetikle
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
         
         logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
         
@@ -112,60 +107,54 @@ def get_tff_kadro():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Faal kadro tablosunu bul - daha spesifik arama
+        # Sadece oyuncu tablosunu bul - spesifik ID ile
         kadro_data = []
         
-        # GridView veya DataGrid tablolarını ara
-        tables = soup.find_all('table', {'class': ['GridView', 'DataGrid', 'table']})
+        # Oyuncu tablosunu ID ile bul
+        oyuncu_tablosu = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
         
-        if not tables:
-            # Class olmadan tüm tabloları dene
-            tables = soup.find_all('table')
-        
-        logger.info(f"Bulunan tablo sayısı: {len(tables)}")
-        
-        for table_index, table in enumerate(tables):
-            rows = table.find_all('tr')
-            logger.info(f"Tablo {table_index + 1}: {len(rows)} satır")
+        if oyuncu_tablosu:
+            logger.info("Oyuncu tablosu bulundu!")
             
-            for row_index, row in enumerate(rows):
-                cells = row.find_all(['td', 'th'])
+            # Tüm oyuncu linklerini bul
+            oyuncu_linkleri = oyuncu_tablosu.find_all('a', id=lambda x: x and 'lnkOyuncu' in x)
+            
+            logger.info(f"Bulunan oyuncu linki sayısı: {len(oyuncu_linkleri)}")
+            
+            for link in oyuncu_linkleri:
+                oyuncu_adi = link.get_text(strip=True)
                 
-                if len(cells) >= 3:  # En az 3 sütun varsa
-                    try:
-                        # İlk hücrenin içeriğini kontrol et
-                        first_cell_text = cells[0].get_text(strip=True)
-                        
-                        # Eğer bu satır başlık satırıysa veya geçersizse atla
-                        if (first_cell_text in ['Oyuncu Adı', 'Ad Soyad', 'Sıra', 'No'] or 
-                            len(first_cell_text) < 3 or 
-                            first_cell_text.isdigit() or
-                            'Kulüp Kodu' in first_cell_text or
-                            'Adres' in first_cell_text):
-                            continue
-                        
-                        oyuncu_adi = first_cell_text
-                        pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-                        lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
-                        
-                        # Geçerli oyuncu adı kontrolü
-                        if (oyuncu_adi and 
-                            len(oyuncu_adi) > 2 and 
-                            not oyuncu_adi.isdigit() and
-                            'Kulüp' not in oyuncu_adi and
-                            'Adres' not in oyuncu_adi):
+                if oyuncu_adi and len(oyuncu_adi) > 2:
+                    # Oyuncu bilgilerini al
+                    # Pozisyon ve lisans durumu için parent td'yi bul
+                    parent_td = link.find_parent('td')
+                    if parent_td:
+                        # Aynı satırdaki diğer hücreleri bul
+                        parent_tr = parent_td.find_parent('tr')
+                        if parent_tr:
+                            cells = parent_tr.find_all('td')
                             
-                            kadro_data.append({
-                                'ad': oyuncu_adi,
-                                'pozisyon': pozisyon,
-                                'lisans_durumu': lisans_durumu
-                            })
+                            pozisyon = ""
+                            lisans_durumu = ""
                             
-                            logger.info(f"Oyuncu bulundu: {oyuncu_adi} - {pozisyon} - {lisans_durumu}")
-                            
-                    except Exception as e:
-                        logger.warning(f"Satır işleme hatası (Tablo {table_index + 1}, Satır {row_index + 1}): {e}")
-                        continue
+                            # Pozisyon ve lisans durumu için diğer hücreleri kontrol et
+                            if len(cells) > 1:
+                                pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                            if len(cells) > 2:
+                                lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+                    
+                    kadro_data.append({
+                        'ad': oyuncu_adi,
+                        'pozisyon': pozisyon,
+                        'lisans_durumu': lisans_durumu
+                    })
+                    
+                    logger.info(f"Oyuncu bulundu: {oyuncu_adi}")
+        else:
+            logger.warning("Oyuncu tablosu bulunamadı!")
+            # Debug için tüm tablo ID'lerini listele
+            all_tables = soup.find_all('table', id=True)
+            logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
         
         logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
         
@@ -175,9 +164,7 @@ def get_tff_kadro():
             for i, oyuncu in enumerate(kadro_data[:5]):
                 logger.info(f"  {i+1}. {oyuncu['ad']} - {oyuncu['pozisyon']} - {oyuncu['lisans_durumu']}")
         else:
-            logger.warning("TFF'den oyuncu verisi alınamadı. HTML içeriğini kontrol edin.")
-            # Debug için HTML içeriğini logla
-            logger.debug(f"HTML içeriği: {soup.prettify()[:1000]}")
+            logger.warning("TFF'den oyuncu verisi alınamadı.")
         
         return kadro_data
         
