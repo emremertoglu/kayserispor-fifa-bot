@@ -38,6 +38,7 @@ except Exception as e:
     logger.error(f"Twitter API v2 bağlantısı başarısız: {e}")
     exit(1)
 
+# Dosya yolları (geçici olarak local dosya kullan)
 STATE_FILE = "kayseri_count.json"
 TFF_STATE_FILE = "tff_kadro.json"
 
@@ -156,16 +157,9 @@ def get_tff_kadro():
         return None
 
 def load_last_count():
-    """Son kayıtlı sayıyı yükler (önce environment variable, sonra dosya)"""
+    """Son kayıtlı sayıyı yükler (sadece dosyadan)"""
     try:
-        # Önce environment variable'dan kontrol et
-        env_count = os.getenv("LAST_COUNT")
-        if env_count:
-            count = int(env_count)
-            logger.info(f"Environment variable'dan son sayı yüklendi: {count}")
-            return count
-        
-        # Dosyadan kontrol et
+        # Sadece dosyadan kontrol et
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
@@ -179,16 +173,12 @@ def load_last_count():
         return None
 
 def save_last_count(count):
-    """Yeni sayıyı kaydeder (hem dosyaya hem environment variable'a)"""
+    """Yeni sayıyı kaydeder (sadece dosyaya)"""
     try:
         # Dosyaya kaydet
         with open(STATE_FILE, "w") as f:
             json.dump({"count": count}, f)
         logger.info(f"Yeni sayı dosyaya kaydedildi: {count}")
-        
-        # Environment variable'a kaydet (Railway'de kalıcı olması için)
-        os.environ["LAST_COUNT"] = str(count)
-        logger.info(f"Yeni sayı environment variable'a kaydedildi: {count}")
     except Exception as e:
         logger.error(f"Sayı kaydetme hatası: {e}")
 
@@ -268,6 +258,9 @@ def main():
     """Ana bot fonksiyonu"""
     logger.info("Kayserispor FIFA Bot başlatıldı")
     
+    # Manuel tweet kontrolü
+    manual_tweet = os.getenv("MANUAL_TWEET", "false").lower() == "true"
+    
     while True:
         try:
             # FIFA API kontrolü
@@ -281,9 +274,16 @@ def main():
 
                 if last_count is None:
                     # İlk çalıştırma
-                    tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var. (Güncelleme: {current_time})"
-                    if send_tweet(tweet_text):
-                        save_last_count(current_count)
+                    if manual_tweet:
+                        # Manuel tweet at
+                        tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var. (Güncelleme: {current_time})"
+                        if send_tweet(tweet_text):
+                            logger.info("Manuel tweet atıldı")
+                        # Manuel tweet flag'ini kaldır
+                        os.environ["MANUAL_TWEET"] = "false"
+                    
+                    logger.info(f"İlk çalıştırma: Dosya sayısı {current_count} olarak kaydedildi")
+                    save_last_count(current_count)
 
                 elif current_count != last_count:
                     # Değişiklik var
