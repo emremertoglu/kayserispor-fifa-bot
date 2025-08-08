@@ -79,6 +79,9 @@ def get_tff_kadro():
         response = session.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         
+        # Session cookie'lerini kontrol et
+        logger.info(f"Session cookies: {dict(session.cookies)}")
+        
         soup = BeautifulSoup(response.content, 'html.parser')
         
         # Form action URL'ini kontrol et
@@ -128,8 +131,12 @@ def get_tff_kadro():
         logger.info(f"Form verileri: {form_data}")
         
         # POST request ile kadro verilerini çek
-        response = session.post(action_url, data=form_data, headers=headers, timeout=30)
+        response = session.post(action_url, data=form_data, headers=headers, timeout=30, allow_redirects=True)
         response.raise_for_status()
+        
+        # Response URL'ini kontrol et
+        logger.info(f"POST response URL: {response.url}")
+        logger.info(f"POST response status: {response.status_code}")
         
         # Sayfanın HTML'ini al
         html_content = response.text
