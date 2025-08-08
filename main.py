@@ -81,6 +81,22 @@ def get_tff_kadro():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
+        # Form action URL'ini kontrol et
+        form = soup.find('form', {'id': 'aspnetForm'})
+        if form:
+            action_url = form.get('action', '')
+            if action_url:
+                # Relative URL'i absolute URL'e çevir
+                if action_url.startswith('./'):
+                    action_url = action_url[2:]  # './' kısmını kaldır
+                if not action_url.startswith('http'):
+                    action_url = f"https://www.tff.org/{action_url}"
+                logger.info(f"Form action URL: {action_url}")
+            else:
+                action_url = url
+        else:
+            action_url = url
+        
         # Form verilerini topla
         form_data = {}
         
@@ -100,10 +116,19 @@ def get_tff_kadro():
         # Ara butonunu tetikle
         form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
         
+        # Dropdown değerlerini de ekle
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_text'] = 'Profesyonel'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_value'] = 'P'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_index'] = '0'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_text'] = 'Faal'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_value'] = '1'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_index'] = '1'
+        
         logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
+        logger.info(f"Form verileri: {form_data}")
         
         # POST request ile kadro verilerini çek
-        response = session.post(url, data=form_data, headers=headers, timeout=30)
+        response = session.post(action_url, data=form_data, headers=headers, timeout=30)
         response.raise_for_status()
         
         # Sayfanın HTML'ini al
