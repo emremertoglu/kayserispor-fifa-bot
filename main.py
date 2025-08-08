@@ -6,13 +6,7 @@ from time import sleep
 import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+from requests_html import HTMLSession
 
 # Loglama ayarları
 logging.basicConfig(
@@ -72,125 +66,88 @@ def get_kayserispor_count():
         return None
 
 def get_tff_kadro():
-    """TFF sitesinden Galatasaray faal kadrosunu alır - Selenium ile JavaScript desteği"""
+    """TFF sitesinden Galatasaray faal kadrosunu alır - requests-html ile JavaScript desteği"""
     try:
-        # Chrome options - Railway/Linux headless mode için
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        logger.info("requests-html ile TFF sitesine bağlanılıyor...")
         
-        logger.info("Selenium WebDriver başlatılıyor...")
+        session = HTMLSession()
+        url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
         
-        # webdriver-manager ile otomatik ChromeDriver yönetimi - Chromium için
-        os.environ['WDM_LOCAL'] = '1'  # Local cache kullan
-        os.environ['WDM_SSL_VERIFY'] = '0'  # SSL doğrulamasını kapat
+        # Sayfayı yükle ve JavaScript'i çalıştır
+        response = session.get(url)
+        logger.info("Sayfa yüklendi, JavaScript çalıştırılıyor...")
         
-        # Chromium için özel ayarlar
-        chrome_options.binary_location = "/usr/bin/chromium"
+        # JavaScript'i render et (sayfa yenilenir)
+        response.html.render(timeout=30, sleep=3)
+        logger.info("JavaScript render tamamlandı")
         
-        # webdriver-manager'ı Chromium için ayarla
-        service = Service(ChromeDriverManager(chrome_type="chromium").install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Sayfanın HTML'ini al
+        html_content = response.html.html
+        soup = BeautifulSoup(html_content, 'html.parser')
         
-        try:
-            url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
-            logger.info(f"TFF sitesine gidiliyor: {url}")
-            driver.get(url)
+        # Oyuncu tablosunu bul
+        oyuncu_tablosu = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
+        
+        kadro_data = []
+        
+        if oyuncu_tablosu:
+            logger.info("Oyuncu tablosu bulundu!")
             
-            # Sayfanın yüklenmesini bekle
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "ctl00_MPane_m_28_196_ctnr_m_28_196_btnAra"))
-            )
+            # Tüm oyuncu linklerini bul
+            oyuncu_linkleri = oyuncu_tablosu.find_all('a', id=lambda x: x and 'lnkOyuncu' in x)
             
-            logger.info("Sayfa yüklendi, Ara butonuna tıklanıyor...")
+            logger.info(f"Bulunan oyuncu linki sayısı: {len(oyuncu_linkleri)}")
             
-            # Ara butonunu bul ve tıkla
-            ara_button = driver.find_element(By.ID, "ctl00_MPane_m_28_196_ctnr_m_28_196_btnAra")
-            ara_button.click()
-            
-            # Tablonun yüklenmesini bekle
-            logger.info("Kadro tablosunun yüklenmesi bekleniyor...")
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.ID, "ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01"))
-            )
-            
-            logger.info("Kadro tablosu yüklendi!")
-            
-            # Sayfanın HTML'ini al
-            page_source = driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            
-            # Oyuncu tablosunu bul
-            oyuncu_tablosu = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
-            
-            kadro_data = []
-            
-            if oyuncu_tablosu:
-                logger.info("Oyuncu tablosu bulundu!")
+            for link in oyuncu_linkleri:
+                oyuncu_adi = link.get_text(strip=True)
                 
-                # Tüm oyuncu linklerini bul
-                oyuncu_linkleri = oyuncu_tablosu.find_all('a', id=lambda x: x and 'lnkOyuncu' in x)
-                
-                logger.info(f"Bulunan oyuncu linki sayısı: {len(oyuncu_linkleri)}")
-                
-                for link in oyuncu_linkleri:
-                    oyuncu_adi = link.get_text(strip=True)
+                if oyuncu_adi and len(oyuncu_adi) > 2:
+                    # Oyuncu bilgilerini al
+                    parent_td = link.find_parent('td')
+                    if parent_td:
+                        parent_tr = parent_td.find_parent('tr')
+                        if parent_tr:
+                            cells = parent_tr.find_all('td')
+                            
+                            pozisyon = ""
+                            lisans_durumu = ""
+                            
+                            if len(cells) > 1:
+                                pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                            if len(cells) > 2:
+                                lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
                     
-                    if oyuncu_adi and len(oyuncu_adi) > 2:
-                        # Oyuncu bilgilerini al
-                        parent_td = link.find_parent('td')
-                        if parent_td:
-                            parent_tr = parent_td.find_parent('tr')
-                            if parent_tr:
-                                cells = parent_tr.find_all('td')
-                                
-                                pozisyon = ""
-                                lisans_durumu = ""
-                                
-                                if len(cells) > 1:
-                                    pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-                                if len(cells) > 2:
-                                    lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
-                        
-                        kadro_data.append({
-                            'ad': oyuncu_adi,
-                            'pozisyon': pozisyon,
-                            'lisans_durumu': lisans_durumu
-                        })
-                        
-                        logger.info(f"Oyuncu bulundu: {oyuncu_adi}")
-            else:
-                logger.warning("Oyuncu tablosu bulunamadı!")
-                
-                # Debug için tüm tabloları listele
-                all_tables = soup.find_all('table', id=True)
-                logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
+                    kadro_data.append({
+                        'ad': oyuncu_adi,
+                        'pozisyon': pozisyon,
+                        'lisans_durumu': lisans_durumu
+                    })
+                    
+                    logger.info(f"Oyuncu bulundu: {oyuncu_adi}")
+        else:
+            logger.warning("Oyuncu tablosu bulunamadı!")
             
-            logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
+            # Debug için tüm tabloları listele
+            all_tables = soup.find_all('table', id=True)
+            logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
             
-            if kadro_data:
-                logger.info("TFF'den alınan ilk 5 oyuncu:")
-                for i, oyuncu in enumerate(kadro_data[:5]):
-                    logger.info(f"  {i+1}. {oyuncu['ad']} - {oyuncu['pozisyon']} - {oyuncu['lisans_durumu']}")
-            else:
-                logger.warning("TFF'den oyuncu verisi alınamadı.")
-            
-            return kadro_data
-            
-        finally:
-            # Browser'ı kapat
-            driver.quit()
-            logger.info("Selenium WebDriver kapatıldı")
+            # Sayfa başlığını kontrol et
+            page_title = soup.title.get_text() if soup.title else "Başlık yok"
+            logger.info(f"Sayfa başlığı: {page_title}")
+        
+        logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
+        
+        if kadro_data:
+            logger.info("TFF'den alınan ilk 5 oyuncu:")
+            for i, oyuncu in enumerate(kadro_data[:5]):
+                logger.info(f"  {i+1}. {oyuncu['ad']} - {oyuncu['pozisyon']} - {oyuncu['lisans_durumu']}")
+        else:
+            logger.warning("TFF'den oyuncu verisi alınamadı.")
+        
+        return kadro_data
         
     except Exception as e:
-        logger.error(f"TFF Selenium hatası: {e}")
+        logger.error(f"TFF requests-html hatası: {e}")
         return None
 
 def load_last_count():
