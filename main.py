@@ -93,7 +93,7 @@ def get_tff_kadro():
         os.environ['WDM_SSL_VERIFY'] = '0'  # SSL doğrulamasını kapat
         
         # Chromium için özel ayarlar
-        chrome_options.binary_location = "/usr/bin/chromium-browser"
+        chrome_options.binary_location = "/usr/bin/chromium"
         
         # webdriver-manager'ı Chromium için ayarla
         service = Service(ChromeDriverManager(chrome_type="chromium").install())
