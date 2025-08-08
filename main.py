@@ -6,7 +6,6 @@ from time import sleep
 import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
-from requests_html import HTMLSession
 
 # Loglama ayarları
 logging.basicConfig(
@@ -66,26 +65,60 @@ def get_kayserispor_count():
         return None
 
 def get_tff_kadro():
-    """TFF sitesinden Galatasaray faal kadrosunu alır - requests-html ile JavaScript desteği"""
+    """TFF sitesinden Galatasaray faal kadrosunu alır - basit requests ile"""
     try:
-        logger.info("requests-html ile TFF sitesine bağlanılıyor...")
+        logger.info("TFF sitesine bağlanılıyor...")
         
-        session = HTMLSession()
+        session = requests.Session()
         url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
         
-        # Sayfayı yükle ve JavaScript'i çalıştır
-        response = session.get(url)
-        logger.info("Sayfa yüklendi, JavaScript çalıştırılıyor...")
+        # İlk sayfa ziyareti
+        response = session.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
         
-        # JavaScript'i render et (sayfa yenilenir)
-        response.html.render(timeout=30, sleep=3)
-        logger.info("JavaScript render tamamlandı")
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Form verilerini topla
+        form_data = {}
+        
+        # ViewState ve diğer gizli alanları bul
+        viewstate = soup.find('input', {'name': '__VIEWSTATE'})
+        if viewstate:
+            form_data['__VIEWSTATE'] = viewstate.get('value', '')
+        
+        viewstategenerator = soup.find('input', {'name': '__VIEWSTATEGENERATOR'})
+        if viewstategenerator:
+            form_data['__VIEWSTATEGENERATOR'] = viewstategenerator.get('value', '')
+        
+        eventvalidation = soup.find('input', {'name': '__EVENTVALIDATION'})
+        if eventvalidation:
+            form_data['__EVENTVALIDATION'] = eventvalidation.get('value', '')
+        
+        # Ara butonunu tetikle
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
+        
+        logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
+        
+        # POST request ile kadro verilerini çek
+        response = session.post(url, data=form_data, headers=headers, timeout=30)
+        response.raise_for_status()
         
         # Sayfanın HTML'ini al
-        html_content = response.html.html
+        html_content = response.text
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Oyuncu tablosunu bul
+        # Debug için sayfa başlığını kontrol et
+        page_title = soup.title.get_text() if soup.title else "Başlık yok"
+        logger.info(f"Sayfa başlığı: {page_title}")
+        
+        # Tüm tabloları kontrol et
+        all_tables = soup.find_all('table', id=True)
+        logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
+        
+        # Oyuncu tablosunu bul - tam ID ile
         oyuncu_tablosu = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
         
         kadro_data = []
@@ -93,7 +126,7 @@ def get_tff_kadro():
         if oyuncu_tablosu:
             logger.info("Oyuncu tablosu bulundu!")
             
-            # Tüm oyuncu linklerini bul
+            # Tüm oyuncu linklerini bul - lnkOyuncu içeren tüm linkler
             oyuncu_linkleri = oyuncu_tablosu.find_all('a', id=lambda x: x and 'lnkOyuncu' in x)
             
             logger.info(f"Bulunan oyuncu linki sayısı: {len(oyuncu_linkleri)}")
@@ -102,52 +135,36 @@ def get_tff_kadro():
                 oyuncu_adi = link.get_text(strip=True)
                 
                 if oyuncu_adi and len(oyuncu_adi) > 2:
-                    # Oyuncu bilgilerini al
-                    parent_td = link.find_parent('td')
-                    if parent_td:
-                        parent_tr = parent_td.find_parent('tr')
-                        if parent_tr:
-                            cells = parent_tr.find_all('td')
-                            
-                            pozisyon = ""
-                            lisans_durumu = ""
-                            
-                            if len(cells) > 1:
-                                pozisyon = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-                            if len(cells) > 2:
-                                lisans_durumu = cells[2].get_text(strip=True) if len(cells) > 2 else ""
-                    
                     kadro_data.append({
                         'ad': oyuncu_adi,
-                        'pozisyon': pozisyon,
-                        'lisans_durumu': lisans_durumu
+                        'pozisyon': '',  # Bu bilgi tabloda yok
+                        'lisans_durumu': ''  # Bu bilgi tabloda yok
                     })
                     
                     logger.info(f"Oyuncu bulundu: {oyuncu_adi}")
         else:
             logger.warning("Oyuncu tablosu bulunamadı!")
+            logger.info("POST response status: " + str(response.status_code))
             
-            # Debug için tüm tabloları listele
-            all_tables = soup.find_all('table', id=True)
-            logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
-            
-            # Sayfa başlığını kontrol et
-            page_title = soup.title.get_text() if soup.title else "Başlık yok"
-            logger.info(f"Sayfa başlığı: {page_title}")
+            # Debug için HTML içeriğini kontrol et
+            if 'ABDÜLKERİM BARDAKCI' in html_content:
+                logger.info("HTML'de oyuncu ismi bulundu ama tablo bulunamadı!")
+            else:
+                logger.info("HTML'de oyuncu ismi de bulunamadı!")
         
         logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
         
         if kadro_data:
             logger.info("TFF'den alınan ilk 5 oyuncu:")
             for i, oyuncu in enumerate(kadro_data[:5]):
-                logger.info(f"  {i+1}. {oyuncu['ad']} - {oyuncu['pozisyon']} - {oyuncu['lisans_durumu']}")
+                logger.info(f"  {i+1}. {oyuncu['ad']}")
         else:
             logger.warning("TFF'den oyuncu verisi alınamadı.")
         
         return kadro_data
         
     except Exception as e:
-        logger.error(f"TFF requests-html hatası: {e}")
+        logger.error(f"TFF requests hatası: {e}")
         return None
 
 def load_last_count():
