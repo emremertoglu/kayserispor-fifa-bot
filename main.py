@@ -12,9 +12,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Test modu - ilk çalıştırmada Twitter API'yi test et
-TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
-
 # Twitter API anahtarlarını environment değişkenlerinden al
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
@@ -41,38 +38,8 @@ except Exception as e:
 
 STATE_FILE = "kayseri_count.json"
 
-def test_twitter_api():
-    """Twitter API v2'yi test eder"""
-    logger.info("=== TWITTER API v2 TEST BAŞLIYOR ===")
-    
-    try:
-        # Tweet atma yetkisini test et
-        test_text = "Test tweet - Kayserispor FIFA Bot"
-        response = client.create_tweet(text=test_text)
-        
-        if response.data:
-            logger.info("✅ Tweet atma yetkisi var!")
-            logger.info(f"✅ Tweet ID: {response.data['id']}")
-            
-            # Test tweet'ini sil
-            client.delete_tweet(response.data['id'])
-            logger.info("✅ Test tweet silindi!")
-            return True
-        else:
-            logger.error("❌ Tweet atılamadı")
-            return False
-            
-    except tweepy.errors.Forbidden as e:
-        logger.error(f"❌ Tweet atma yetkisi yok: {e}")
-        return False
-    except tweepy.errors.Unauthorized as e:
-        logger.error(f"❌ Twitter API yetkilendirme hatası: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Twitter API bağlantı hatası: {e}")
-        return False
-
 def get_kayserispor_count():
+    """FIFA API'den Kayserispor dosya sayısını alır"""
     try:
         url = "https://knowledge.fifa.com/api/fkmpdatahub/fifadatahubtransfer/registrationBans"
         headers = {
@@ -81,26 +48,7 @@ def get_kayserispor_count():
         response = requests.get(url, timeout=30, headers=headers)
         response.raise_for_status()
         
-        # Response içeriğini logla
-        logger.info(f"FIFA API Response Status: {response.status_code}")
-        logger.info(f"FIFA API Response Headers: {dict(response.headers)}")
-        
-        # Response içeriğini kontrol et
-        content = response.text
-        logger.info(f"FIFA API Response Content (first 500 chars): {content[:500]}")
-        
-        # JSON parsing'i güvenli hale getir
-        try:
-            data = response.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing hatası: {e}")
-            logger.error(f"Response content: {content}")
-            return None
-        
-        if not isinstance(data, list):
-            logger.error(f"Beklenmeyen veri formatı. Data type: {type(data)}")
-            return None
-            
+        data = response.json()
         count = sum(1 for item in data if isinstance(item, dict) and item.get("club_in") == "KAYSERISPOR FUTBOL A.S.")
         logger.info(f"FIFA API'den alınan Kayserispor dosya sayısı: {count}")
         return count
@@ -113,6 +61,7 @@ def get_kayserispor_count():
         return None
 
 def load_last_count():
+    """Son kayıtlı sayıyı yükler"""
     try:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
@@ -126,6 +75,7 @@ def load_last_count():
         return None
 
 def save_last_count(count):
+    """Yeni sayıyı kaydeder"""
     try:
         with open(STATE_FILE, "w") as f:
             json.dump({"count": count}, f)
@@ -133,19 +83,30 @@ def save_last_count(count):
     except Exception as e:
         logger.error(f"Sayı kaydetme hatası: {e}")
 
-def main():
-    logger.info("Kayserispor FIFA Bot başlatıldı")
-    
-    # Test modu aktifse Twitter API'yi test et
-    if TEST_MODE:
-        logger.info("Test modu aktif - Twitter API v2 test ediliyor...")
-        test_success = test_twitter_api()
-        if test_success:
-            logger.info("✅ Twitter API v2 test başarılı!")
+def send_tweet(message):
+    """Tweet atar"""
+    try:
+        response = client.create_tweet(text=message)
+        if response.data:
+            logger.info(f"Tweet atıldı: {message}")
+            logger.info(f"Tweet ID: {response.data['id']}")
+            return True
         else:
-            logger.error("❌ Twitter API v2 test başarısız!")
-        logger.info("Test modu tamamlandı, bot durduruluyor...")
-        return
+            logger.error("Tweet atılamadı")
+            return False
+    except tweepy.errors.Forbidden as e:
+        logger.error(f"Twitter API erişim hatası (403): {e}")
+        return False
+    except tweepy.errors.Unauthorized as e:
+        logger.error(f"Twitter API yetkilendirme hatası (401): {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Twitter API beklenmeyen hata: {e}")
+        return False
+
+def main():
+    """Ana bot fonksiyonu"""
+    logger.info("Kayserispor FIFA Bot başlatıldı")
     
     while True:
         try:
@@ -159,42 +120,16 @@ def main():
             last_count = load_last_count()
 
             if last_count is None:
+                # İlk çalıştırma
                 tweet_text = f"Şu anda Kayserispor için {current_count} kayıt yasağı dosyası var."
-                try:
-                    response = client.create_tweet(text=tweet_text)
-                    if response.data:
-                        save_last_count(current_count)
-                        logger.info(f"İlk tweet atıldı: {tweet_text}")
-                        logger.info(f"Tweet ID: {response.data['id']}")
-                    else:
-                        logger.error("Tweet atılamadı")
-                except tweepy.errors.Forbidden as e:
-                    logger.error(f"Twitter API erişim hatası (403): {e}")
-                    logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
-                except tweepy.errors.Unauthorized as e:
-                    logger.error(f"Twitter API yetkilendirme hatası (401): {e}")
-                    logger.error("Twitter API anahtarlarınızı kontrol edin.")
-                except Exception as e:
-                    logger.error(f"Twitter API beklenmeyen hata: {e}")
+                if send_tweet(tweet_text):
+                    save_last_count(current_count)
 
             elif current_count != last_count:
+                # Değişiklik var
                 tweet_text = f"Kayserispor dosya sayısında değişiklik var! Yeni sayı: {current_count}"
-                try:
-                    response = client.create_tweet(text=tweet_text)
-                    if response.data:
-                        save_last_count(current_count)
-                        logger.info(f"Değişiklik tweet atıldı: {tweet_text}")
-                        logger.info(f"Tweet ID: {response.data['id']}")
-                    else:
-                        logger.error("Tweet atılamadı")
-                except tweepy.errors.Forbidden as e:
-                    logger.error(f"Twitter API erişim hatası (403): {e}")
-                    logger.error("Twitter Developer Portal'da uygulamanızın 'Read and Write' yetkisine sahip olduğundan emin olun.")
-                except tweepy.errors.Unauthorized as e:
-                    logger.error(f"Twitter API yetkilendirme hatası (401): {e}")
-                    logger.error("Twitter API anahtarlarınızı kontrol edin.")
-                except Exception as e:
-                    logger.error(f"Twitter API beklenmeyen hata: {e}")
+                if send_tweet(tweet_text):
+                    save_last_count(current_count)
             else:
                 logger.info(f"Değişiklik yok. Mevcut sayı: {current_count}")
 

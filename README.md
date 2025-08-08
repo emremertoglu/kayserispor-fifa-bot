@@ -1,1 +1,1 @@
-# Kayserispor Botu
+# Kayserispor Transfer Yasağı Botu
