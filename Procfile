@@ -1,1 +1,1 @@
-worker: python test_twitter.py
+worker: python main.py

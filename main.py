@@ -12,6 +12,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Test modu - ilk çalıştırmada Twitter API'yi test et
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+
 # Twitter API anahtarlarını environment değişkenlerinden al
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
@@ -32,6 +35,42 @@ except Exception as e:
     exit(1)
 
 STATE_FILE = "kayseri_count.json"
+
+def test_twitter_api():
+    """Twitter API'yi test eder"""
+    logger.info("=== TWITTER API TEST BAŞLIYOR ===")
+    
+    try:
+        # Kullanıcı bilgilerini al
+        user = api.verify_credentials()
+        logger.info(f"✅ Twitter API bağlantısı başarılı!")
+        logger.info(f"✅ Kullanıcı: @{user.screen_name}")
+        logger.info(f"✅ Hesap adı: {user.name}")
+        
+        # Tweet atma yetkisini test et
+        try:
+            test_text = "Test tweet - Kayserispor FIFA Bot"
+            api.update_status(test_text)
+            logger.info("✅ Tweet atma yetkisi var!")
+            
+            # Test tweet'ini sil
+            api.destroy_status(api.user_timeline(count=1)[0].id)
+            logger.info("✅ Test tweet silindi!")
+            return True
+            
+        except tweepy.errors.Forbidden as e:
+            logger.error(f"❌ Tweet atma yetkisi yok: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Tweet atma hatası: {e}")
+            return False
+            
+    except tweepy.errors.Unauthorized as e:
+        logger.error(f"❌ Twitter API yetkilendirme hatası: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Twitter API bağlantı hatası: {e}")
+        return False
 
 def get_kayserispor_count():
     try:
@@ -96,6 +135,17 @@ def save_last_count(count):
 
 def main():
     logger.info("Kayserispor FIFA Bot başlatıldı")
+    
+    # Test modu aktifse Twitter API'yi test et
+    if TEST_MODE:
+        logger.info("Test modu aktif - Twitter API test ediliyor...")
+        test_success = test_twitter_api()
+        if test_success:
+            logger.info("✅ Twitter API test başarılı!")
+        else:
+            logger.error("❌ Twitter API test başarısız!")
+        logger.info("Test modu tamamlandı, bot durduruluyor...")
+        return
     
     while True:
         try:
