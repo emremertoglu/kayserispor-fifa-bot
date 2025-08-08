@@ -86,13 +86,17 @@ def get_tff_kadro():
         chrome_options.add_argument("--disable-images")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         
-        # Railway'de Chrome binary path'i
-        chrome_options.binary_location = "/usr/bin/chromium-browser"
-        
         logger.info("Selenium WebDriver başlatılıyor...")
         
-        # webdriver-manager ile otomatik ChromeDriver yönetimi
-        service = Service(ChromeDriverManager().install())
+        # webdriver-manager ile otomatik ChromeDriver yönetimi - Chromium için
+        os.environ['WDM_LOCAL'] = '1'  # Local cache kullan
+        os.environ['WDM_SSL_VERIFY'] = '0'  # SSL doğrulamasını kapat
+        
+        # Chromium için özel ayarlar
+        chrome_options.binary_location = "/usr/bin/chromium-browser"
+        
+        # webdriver-manager'ı Chromium için ayarla
+        service = Service(ChromeDriverManager(chrome_type="chromium").install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         try:
