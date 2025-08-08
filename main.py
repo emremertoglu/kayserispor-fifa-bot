@@ -96,14 +96,47 @@ def get_tff_kadro():
         if eventvalidation:
             form_data['__EVENTVALIDATION'] = eventvalidation.get('value', '')
         
+        # Dropdown değerlerini bul ve ekle
+        # Sezon dropdown'ı
+        sezon_dropdown = soup.find('select', {'name': 'ctl00$MPane$m_28_196_ctnr$m_28_196$ddlSezon'})
+        if sezon_dropdown:
+            # 2025-2026 sezonunu bul
+            for option in sezon_dropdown.find_all('option'):
+                if '2025-2026' in option.get_text():
+                    form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$ddlSezon'] = option.get('value', '')
+                    break
+        
+        # Statü dropdown'ı
+        status_dropdown = soup.find('select', {'name': 'ctl00$MPane$m_28_196_ctnr$m_28_196$ddlStatus'})
+        if status_dropdown:
+            # Profesyonel seçeneğini bul
+            for option in status_dropdown.find_all('option'):
+                if 'Profesyonel' in option.get_text():
+                    form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$ddlStatus'] = option.get('value', '')
+                    break
+        
+        # Durum dropdown'ı
+        durum_dropdown = soup.find('select', {'name': 'ctl00$MPane$m_28_196_ctnr$m_28_196$ddlDurum'})
+        if durum_dropdown:
+            # Faal seçeneğini bul
+            for option in durum_dropdown.find_all('option'):
+                if 'Faal' in option.get_text():
+                    form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$ddlDurum'] = option.get('value', '')
+                    break
+        
         # Ara butonunu tetikle
         form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
         
         logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
+        logger.info(f"Form verileri: {form_data}")
         
         # POST request ile kadro verilerini çek
         response = session.post(url, data=form_data, headers=headers, timeout=30)
         response.raise_for_status()
+        
+        # Kısa bir bekleme süresi ekle
+        import time
+        time.sleep(2)
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
@@ -155,6 +188,12 @@ def get_tff_kadro():
             # Debug için tüm tablo ID'lerini listele
             all_tables = soup.find_all('table', id=True)
             logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
+            
+            # Debug için sayfa içeriğini kontrol et
+            logger.info("Sayfa başlığı: " + soup.title.get_text() if soup.title else "Başlık yok")
+            
+            # Form verilerinin doğru gönderilip gönderilmediğini kontrol et
+            logger.info("POST response status: " + str(response.status_code))
         
         logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
         
