@@ -5,7 +5,6 @@ import tweepy
 from time import sleep
 import logging
 from datetime import datetime
-from bs4 import BeautifulSoup
 
 # Loglama ayarları
 logging.basicConfig(
@@ -38,9 +37,8 @@ except Exception as e:
     logger.error(f"Twitter API v2 bağlantısı başarısız: {e}")
     exit(1)
 
-# Dosya yolları (geçici olarak local dosya kullan)
+# Dosya yolu
 STATE_FILE = "kayseri_count.json"
-TFF_STATE_FILE = "tff_kadro.json"
 
 def get_kayserispor_count():
     """FIFA API'den Kayserispor dosya sayısını alır"""
@@ -62,141 +60,6 @@ def get_kayserispor_count():
         return None
     except Exception as e:
         logger.error(f"FIFA API veri işleme hatası: {e}")
-        return None
-
-def get_tff_kadro():
-    """TFF sitesinden Galatasaray faal kadrosunu alır - basit requests ile"""
-    try:
-        logger.info("TFF sitesine bağlanılıyor...")
-        
-        session = requests.Session()
-        url = "https://www.tff.org/Default.aspx?pageId=28&kulupID=3604"  # Galatasaray
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        # İlk sayfa ziyareti
-        response = session.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        # Session cookie'lerini kontrol et
-        logger.info(f"Session cookies: {dict(session.cookies)}")
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Form action URL'ini kontrol et
-        form = soup.find('form', {'id': 'aspnetForm'})
-        if form:
-            action_url = form.get('action', '')
-            if action_url:
-                # Relative URL'i absolute URL'e çevir
-                if action_url.startswith('./'):
-                    action_url = action_url[2:]  # './' kısmını kaldır
-                if not action_url.startswith('http'):
-                    action_url = f"https://www.tff.org/{action_url}"
-                logger.info(f"Form action URL: {action_url}")
-            else:
-                action_url = url
-        else:
-            action_url = url
-        
-        # Form verilerini topla
-        form_data = {}
-        
-        # ViewState ve diğer gizli alanları bul
-        viewstate = soup.find('input', {'name': '__VIEWSTATE'})
-        if viewstate:
-            form_data['__VIEWSTATE'] = viewstate.get('value', '')
-        
-        viewstategenerator = soup.find('input', {'name': '__VIEWSTATEGENERATOR'})
-        if viewstategenerator:
-            form_data['__VIEWSTATEGENERATOR'] = viewstategenerator.get('value', '')
-        
-        eventvalidation = soup.find('input', {'name': '__EVENTVALIDATION'})
-        if eventvalidation:
-            form_data['__EVENTVALIDATION'] = eventvalidation.get('value', '')
-        
-        # Ara butonunu tetikle
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$btnAra'] = 'Ara'
-        
-        # Dropdown değerlerini de ekle
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_text'] = 'Profesyonel'
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_value'] = 'P'
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_index'] = '0'
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_text'] = 'Faal'
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_value'] = '1'
-        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_index'] = '1'
-        
-        logger.info("TFF form verileri hazırlandı, POST request gönderiliyor...")
-        logger.info(f"Form verileri: {form_data}")
-        
-        # POST request ile kadro verilerini çek
-        response = session.post(action_url, data=form_data, headers=headers, timeout=30, allow_redirects=True)
-        response.raise_for_status()
-        
-        # Response URL'ini kontrol et
-        logger.info(f"POST response URL: {response.url}")
-        logger.info(f"POST response status: {response.status_code}")
-        
-        # Sayfanın HTML'ini al
-        html_content = response.text
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Debug için sayfa başlığını kontrol et
-        page_title = soup.title.get_text() if soup.title else "Başlık yok"
-        logger.info(f"Sayfa başlığı: {page_title}")
-        
-        # Tüm tabloları kontrol et
-        all_tables = soup.find_all('table', id=True)
-        logger.info(f"Sayfadaki tablo ID'leri: {[table.get('id') for table in all_tables]}")
-        
-        # Oyuncu tablosunu bul - tam ID ile
-        oyuncu_tablosu = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
-        
-        kadro_data = []
-        
-        if oyuncu_tablosu:
-            logger.info("Oyuncu tablosu bulundu!")
-            
-            # Tüm oyuncu linklerini bul - lnkOyuncu içeren tüm linkler
-            oyuncu_linkleri = oyuncu_tablosu.find_all('a', id=lambda x: x and 'lnkOyuncu' in x)
-            
-            logger.info(f"Bulunan oyuncu linki sayısı: {len(oyuncu_linkleri)}")
-            
-            for link in oyuncu_linkleri:
-                oyuncu_adi = link.get_text(strip=True)
-                
-                if oyuncu_adi and len(oyuncu_adi) > 2:
-                    kadro_data.append({
-                        'ad': oyuncu_adi,
-                        'pozisyon': '',  # Bu bilgi tabloda yok
-                        'lisans_durumu': ''  # Bu bilgi tabloda yok
-                    })
-                    
-                    logger.info(f"Oyuncu bulundu: {oyuncu_adi}")
-        else:
-            logger.warning("Oyuncu tablosu bulunamadı!")
-            logger.info("POST response status: " + str(response.status_code))
-            
-            # Debug için HTML içeriğini kontrol et
-            if 'ABDÜLKERİM BARDAKCI' in html_content:
-                logger.info("HTML'de oyuncu ismi bulundu ama tablo bulunamadı!")
-            else:
-                logger.info("HTML'de oyuncu ismi de bulunamadı!")
-        
-        logger.info(f"TFF'den alınan oyuncu sayısı: {len(kadro_data)}")
-        
-        if kadro_data:
-            logger.info("TFF'den alınan ilk 5 oyuncu:")
-            for i, oyuncu in enumerate(kadro_data[:5]):
-                logger.info(f"  {i+1}. {oyuncu['ad']}")
-        else:
-            logger.warning("TFF'den oyuncu verisi alınamadı.")
-        
-        return kadro_data
-        
-    except Exception as e:
-        logger.error(f"TFF requests hatası: {e}")
         return None
 
 def load_last_count():
@@ -224,84 +87,6 @@ def save_last_count(count):
         logger.info(f"Yeni sayı dosyaya kaydedildi: {count}")
     except Exception as e:
         logger.error(f"Sayı kaydetme hatası: {e}")
-
-def load_tff_kadro():
-    """TFF kadro verilerini yükler"""
-    try:
-        if os.path.exists(TFF_STATE_FILE):
-            with open(TFF_STATE_FILE, "r") as f:
-                data = json.load(f)
-                logger.info(f"TFF kadro verisi yüklendi: {len(data)} oyuncu")
-                return data
-        logger.info("TFF kadro verisi bulunamadı, ilk çalıştırma")
-        return None
-    except Exception as e:
-        logger.error(f"TFF kadro yükleme hatası: {e}")
-        return None
-
-def save_tff_kadro(kadro_data):
-    """TFF kadro verilerini kaydeder"""
-    try:
-        with open(TFF_STATE_FILE, "w") as f:
-            json.dump(kadro_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"TFF kadro verisi kaydedildi: {len(kadro_data)} oyuncu")
-    except Exception as e:
-        logger.error(f"TFF kadro kaydetme hatası: {e}")
-
-def check_lisans_degisiklikleri(eski_kadro, yeni_kadro):
-    """Kadro değişikliklerini kontrol eder (yeni oyuncu, çıkan oyuncu, lisans değişikliği)"""
-    if not eski_kadro or not yeni_kadro:
-        return []
-    
-    degisiklikler = []
-    
-    # Eski kadrodaki oyuncuları kontrol et
-    eski_oyuncu_isimleri = {oyuncu.get('ad', '') for oyuncu in eski_kadro}
-    yeni_oyuncu_isimleri = {oyuncu.get('ad', '') for oyuncu in yeni_kadro}
-    
-    # Yeni eklenen oyuncular
-    yeni_eklenenler = yeni_oyuncu_isimleri - eski_oyuncu_isimleri
-    for yeni_oyuncu in yeni_kadro:
-        if yeni_oyuncu.get('ad', '') in yeni_eklenenler:
-            degisiklikler.append({
-                'tip': 'yeni_oyuncu',
-                'oyuncu': yeni_oyuncu.get('ad', ''),
-                'pozisyon': yeni_oyuncu.get('pozisyon', ''),
-                'lisans_durumu': yeni_oyuncu.get('lisans_durumu', '')
-            })
-    
-    # Çıkan oyuncular
-    cikan_oyuncular = eski_oyuncu_isimleri - yeni_oyuncu_isimleri
-    for eski_oyuncu in eski_kadro:
-        if eski_oyuncu.get('ad', '') in cikan_oyuncular:
-            degisiklikler.append({
-                'tip': 'cikan_oyuncu',
-                'oyuncu': eski_oyuncu.get('ad', ''),
-                'pozisyon': eski_oyuncu.get('pozisyon', ''),
-                'lisans_durumu': eski_oyuncu.get('lisans_durumu', '')
-            })
-    
-    # Lisans durumu değişiklikleri
-    for eski_oyuncu in eski_kadro:
-        eski_ad = eski_oyuncu.get('ad', '')
-        eski_lisans = eski_oyuncu.get('lisans_durumu', '')
-        
-        # Yeni kadroda aynı oyuncuyu bul
-        for yeni_oyuncu in yeni_kadro:
-            yeni_ad = yeni_oyuncu.get('ad', '')
-            yeni_lisans = yeni_oyuncu.get('lisans_durumu', '')
-            
-            if eski_ad == yeni_ad and eski_lisans != yeni_lisans:
-                degisiklikler.append({
-                    'tip': 'lisans_degisikligi',
-                    'oyuncu': eski_ad,
-                    'pozisyon': yeni_oyuncu.get('pozisyon', ''),
-                    'eski_durum': eski_lisans,
-                    'yeni_durum': yeni_lisans
-                })
-                break
-    
-    return degisiklikler
 
 def send_tweet(message):
     """Tweet atar"""
@@ -362,37 +147,6 @@ def main():
                         save_last_count(current_count)
                 else:
                     logger.info(f"FIFA: Değişiklik yok. Mevcut sayı: {current_count}")
-
-            # TFF Kadro kontrolü
-            current_kadro = get_tff_kadro()
-            
-            if current_kadro is None:
-                logger.warning("TFF'den veri alınamadı")
-            else:
-                last_kadro = load_tff_kadro()
-                
-                if last_kadro is None:
-                    # İlk çalıştırma
-                    logger.info(f"TFF: İlk kadro verisi kaydedildi: {len(current_kadro)} oyuncu")
-                    save_tff_kadro(current_kadro)
-                else:
-                    # Değişiklik kontrolü
-                    degisiklikler = check_lisans_degisiklikleri(last_kadro, current_kadro)
-                    
-                    if degisiklikler:
-                        logger.info(f"TFF: {len(degisiklikler)} kadro değişikliği bulundu:")
-                        for degisiklik in degisiklikler:
-                            if degisiklik['tip'] == 'yeni_oyuncu':
-                                logger.info(f"  Yeni Oyuncu: {degisiklik['oyuncu']} ({degisiklik['pozisyon']})")
-                            elif degisiklik['tip'] == 'cikan_oyuncu':
-                                logger.info(f"  Çıkan Oyuncu: {degisiklik['oyuncu']} ({degisiklik['pozisyon']})")
-                            elif degisiklik['tip'] == 'lisans_degisikligi':
-                                logger.info(f"  Lisans Değişikliği: {degisiklik['oyuncu']} ({degisiklik['pozisyon']}): {degisiklik['eski_durum']} → {degisiklik['yeni_durum']}")
-                        
-                        # Yeni kadroyu kaydet
-                        save_tff_kadro(current_kadro)
-                    else:
-                        logger.info(f"TFF: Kadro değişikliği yok. {len(current_kadro)} oyuncu")
 
         except Exception as e:
             logger.error(f"Beklenmeyen hata: {e}")
