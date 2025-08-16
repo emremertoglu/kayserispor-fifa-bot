@@ -94,19 +94,60 @@ def get_tff_kayserispor_roster():
         # Kadro bilgilerini parse et
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Kadro tablosunu bul
+        # Debug: Sayfadaki tüm tabloları bul
+        all_tables = soup.find_all('table')
+        logger.info(f"Sayfada toplam {len(all_tables)} tablo bulundu")
+        
+        # Farklı tablo seçicileri dene
+        roster_table = None
+        
+        # 1. class="table" ile dene
         roster_table = soup.find('table', {'class': 'table'})
+        if roster_table:
+            logger.info("Tablo 'table' class'ı ile bulundu")
+        
+        # 2. class="grid" ile dene
+        if not roster_table:
+            roster_table = soup.find('table', {'class': 'grid'})
+            if roster_table:
+                logger.info("Tablo 'grid' class'ı ile bulundu")
+        
+        # 3. ID ile dene
+        if not roster_table:
+            roster_table = soup.find('table', {'id': 'ContentPlaceHolder1_gvOyuncular'})
+            if roster_table:
+                logger.info("Tablo ID ile bulundu")
+        
+        # 4. Herhangi bir tablo içinde "Oyuncu" kelimesi geçen
+        if not roster_table:
+            for table in all_tables:
+                table_text = table.get_text().lower()
+                if 'oyuncu' in table_text or 'futbolcu' in table_text:
+                    roster_table = table
+                    logger.info("Tablo içerik analizi ile bulundu")
+                    break
+        
+        # 5. En büyük tabloyu al (genellikle kadro tablosu en büyüktür)
+        if not roster_table and all_tables:
+            roster_table = max(all_tables, key=lambda x: len(x.find_all('tr')))
+            logger.info("En büyük tablo seçildi")
+        
         if not roster_table:
             logger.warning("Kadro tablosu bulunamadı")
+            # Debug: Sayfanın bir kısmını logla
+            page_text = soup.get_text()[:1000]
+            logger.info(f"Sayfa içeriği (ilk 1000 karakter): {page_text}")
             return None
         
         # Oyuncu bilgilerini çek
         players = []
         rows = roster_table.find_all('tr')[1:]  # İlk satır başlık
         
+        logger.info(f"Tablo satır sayısı: {len(rows)}")
+        
         for row in rows:
             cells = row.find_all('td')
-            if len(cells) >= 4:  # En az 4 sütun olmalı
+            if len(cells) >= 2:  # En az 2 sütun olmalı
                 player_info = {
                     'name': cells[0].get_text(strip=True) if cells[0] else '',
                     'position': cells[1].get_text(strip=True) if len(cells) > 1 and cells[1] else '',
