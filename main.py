@@ -145,24 +145,30 @@ def get_tff_kayserispor_roster():
             logger.info("Kadro tablosu ID ile bulundu")
         else:
             # Alternatif arama yöntemleri
-            # 1. ID'si "grdKadro" içeren tablo
-            roster_table = soup.find('table', {'id': lambda x: x and 'grdKadro' in x})
+            # 1. takimKadrosuTable class'ı ile dene (en öncelikli)
+            roster_table = soup.find('table', {'class': 'takimKadrosuTable'})
             if roster_table:
-                logger.info("Kadro tablosu 'grdKadro' ID'si ile bulundu")
+                logger.info("Kadro tablosu 'takimKadrosuTable' class'ı ile bulundu")
             
-            # 2. class="table" ile dene
+            # 2. ID'si "grdKadro" içeren tablo
+            if not roster_table:
+                roster_table = soup.find('table', {'id': lambda x: x and 'grdKadro' in x})
+                if roster_table:
+                    logger.info("Kadro tablosu 'grdKadro' ID'si ile bulundu")
+            
+            # 3. class="table" ile dene
             if not roster_table:
                 roster_table = soup.find('table', {'class': 'table'})
                 if roster_table:
                     logger.info("Tablo 'table' class'ı ile bulundu")
             
-            # 3. class="grid" ile dene
+            # 4. class="grid" ile dene
             if not roster_table:
                 roster_table = soup.find('table', {'class': 'grid'})
                 if roster_table:
                     logger.info("Tablo 'grid' class'ı ile bulundu")
             
-            # 4. Herhangi bir tablo içinde "Oyuncu" kelimesi geçen
+            # 5. Herhangi bir tablo içinde "Oyuncu" kelimesi geçen
             if not roster_table:
                 for table in all_tables:
                     table_text = table.get_text().lower()
@@ -171,7 +177,7 @@ def get_tff_kayserispor_roster():
                         logger.info("Tablo içerik analizi ile bulundu")
                         break
             
-            # 5. En büyük tabloyu al (genellikle kadro tablosu en büyüktür)
+            # 6. En büyük tabloyu al (genellikle kadro tablosu en büyüktür)
             if not roster_table and all_tables:
                 roster_table = max(all_tables, key=lambda x: len(x.find_all('tr')))
                 logger.info("En büyük tablo seçildi")
