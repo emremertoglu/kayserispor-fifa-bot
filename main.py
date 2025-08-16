@@ -65,6 +65,10 @@ def get_tff_kayserispor_roster():
         # BeautifulSoup ile sayfayı parse et
         soup = BeautifulSoup(response.content, 'html.parser')
         
+        # Debug: Sayfadaki tüm input'ları listele
+        all_inputs = soup.find_all('input')
+        logger.info(f"Sayfada toplam {len(all_inputs)} input bulundu")
+        
         # ViewState ve diğer form verilerini al
         viewstate = soup.find('input', {'name': '__VIEWSTATE'})
         viewstategenerator = soup.find('input', {'name': '__VIEWSTATEGENERATOR'})
@@ -74,18 +78,49 @@ def get_tff_kayserispor_roster():
             logger.error("Form verileri bulunamadı")
             return None
         
-        # Form verilerini hazırla - doğru buton ID'sini kullan
+        # Debug: Form verilerini logla
+        logger.info(f"ViewState uzunluğu: {len(viewstate.get('value', ''))}")
+        logger.info(f"EventValidation uzunluğu: {len(eventvalidation.get('value', ''))}")
+        
+        # Tüm dropdown'ları bul
+        ddl_sezon = soup.find('select', {'id': lambda x: x and 'ddlSezon' in x})
+        ddl_status = soup.find('select', {'id': lambda x: x and 'ddlStatus' in x})
+        ddl_durum = soup.find('select', {'id': lambda x: x and 'ddlDurum' in x})
+        
+        if ddl_sezon:
+            logger.info(f"Sezon dropdown bulundu: {ddl_sezon.get('id')}")
+        if ddl_status:
+            logger.info(f"Status dropdown bulundu: {ddl_status.get('id')}")
+        if ddl_durum:
+            logger.info(f"Durum dropdown bulundu: {ddl_durum.get('id')}")
+        
+        # Form verilerini hazırla - dinamik olarak ID'leri al
         form_data = {
             '__VIEWSTATE': viewstate.get('value', ''),
             '__VIEWSTATEGENERATOR': viewstategenerator.get('value', ''),
             '__EVENTVALIDATION': eventvalidation.get('value', ''),
             '__EVENTTARGET': '',
             '__EVENTARGUMENT': '',
-            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon': '2025-2026',  # Sezon
-            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus': 'Profesyonel',  # Statü
-            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum': 'Faal',  # Durum
-            'ctl00$MPane$m_28_196$ctnr$m_28_196$btnAra': 'Ara'  # Doğru buton ID'si
         }
+        
+        # Dropdown değerlerini ekle
+        if ddl_sezon:
+            form_data[ddl_sezon.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon')] = '2025-2026'
+        if ddl_status:
+            form_data[ddl_status.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus')] = 'Profesyonel'
+        if ddl_durum:
+            form_data[ddl_durum.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum')] = 'Faal'
+        
+        # Ara butonunu bul
+        btn_ara = soup.find('input', {'id': lambda x: x and 'btnAra' in x})
+        if btn_ara:
+            logger.info(f"Ara butonu bulundu: {btn_ara.get('id')}")
+            form_data[btn_ara.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$btnAra')] = 'Ara'
+        else:
+            logger.warning("Ara butonu bulunamadı!")
+        
+        # Debug: Form verilerini logla
+        logger.info(f"Gönderilecek form verileri: {list(form_data.keys())}")
         
         # POST isteği gönder - kadro bilgilerini al
         response = session.post(url, data=form_data, headers=headers, timeout=30)
@@ -96,7 +131,13 @@ def get_tff_kayserispor_roster():
         
         # Debug: Sayfadaki tüm tabloları bul
         all_tables = soup.find_all('table')
-        logger.info(f"Sayfada toplam {len(all_tables)} tablo bulundu")
+        logger.info(f"POST sonrası sayfada toplam {len(all_tables)} tablo bulundu")
+        
+        # Tüm tabloların ID'lerini logla
+        for i, table in enumerate(all_tables):
+            table_id = table.get('id', 'ID_YOK')
+            table_class = table.get('class', 'CLASS_YOK')
+            logger.info(f"Tablo {i+1}: ID={table_id}, Class={table_class}")
         
         # Doğru kadro tablosunu bul - ID ile
         roster_table = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
