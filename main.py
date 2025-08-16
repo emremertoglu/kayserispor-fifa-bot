@@ -121,6 +121,7 @@ def get_tff_kayserispor_roster():
         
         # Debug: Form verilerini logla
         logger.info(f"Gönderilecek form verileri: {list(form_data.keys())}")
+        logger.info(f"Dropdown değerleri: Sezon={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon', 'BULUNAMADI')}, Status={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus', 'BULUNAMADI')}, Durum={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum', 'BULUNAMADI')}")
         
         # POST isteği gönder - kadro bilgilerini al
         response = session.post(url, data=form_data, headers=headers, timeout=30)
