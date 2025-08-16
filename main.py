@@ -91,6 +91,14 @@ def get_tff_kayserispor_roster():
             '__EVENTARGUMENT': '',
         }
         
+        # Dropdown değerlerini ekle (HTML'den gördüğümüz gibi)
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$SezonSelector1$combo_text'] = '2025-2026'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$SezonSelector1$combo_value'] = '25'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_text'] = 'Profesyonel'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$cmbTakimlar_value'] = 'P'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_text'] = 'Faal'
+        form_data['ctl00$MPane$m_28_196_ctnr$m_28_196$f_value'] = '1'
+        
         # Ara butonunu bul ve ekle
         btn_ara = soup.find('input', {'id': lambda x: x and 'btnAra' in x})
         if btn_ara:
