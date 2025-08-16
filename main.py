@@ -74,17 +74,17 @@ def get_tff_kayserispor_roster():
             logger.error("Form verileri bulunamadı")
             return None
         
-        # Form verilerini hazırla
+        # Form verilerini hazırla - doğru buton ID'sini kullan
         form_data = {
             '__VIEWSTATE': viewstate.get('value', ''),
             '__VIEWSTATEGENERATOR': viewstategenerator.get('value', ''),
             '__EVENTVALIDATION': eventvalidation.get('value', ''),
             '__EVENTTARGET': '',
             '__EVENTARGUMENT': '',
-            'ctl00$ContentPlaceHolder1$ddlSezon': '2025-2026',  # Sezon
-            'ctl00$ContentPlaceHolder1$ddlStatus': 'Profesyonel',  # Statü
-            'ctl00$ContentPlaceHolder1$ddlDurum': 'Faal',  # Durum
-            'ctl00$ContentPlaceHolder1$btnAra': 'Ara'  # Ara butonu
+            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon': '2025-2026',  # Sezon
+            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus': 'Profesyonel',  # Statü
+            'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum': 'Faal',  # Durum
+            'ctl00$MPane$m_28_196$ctnr$m_28_196$btnAra': 'Ara'  # Doğru buton ID'si
         }
         
         # POST isteği gönder - kadro bilgilerini al
@@ -98,39 +98,42 @@ def get_tff_kayserispor_roster():
         all_tables = soup.find_all('table')
         logger.info(f"Sayfada toplam {len(all_tables)} tablo bulundu")
         
-        # Farklı tablo seçicileri dene
-        roster_table = None
-        
-        # 1. class="table" ile dene
-        roster_table = soup.find('table', {'class': 'table'})
+        # Doğru kadro tablosunu bul - ID ile
+        roster_table = soup.find('table', {'id': 'ctl00_MPane_m_28_196_ctnr_m_28_196_grdKadro_ctl01'})
         if roster_table:
-            logger.info("Tablo 'table' class'ı ile bulundu")
-        
-        # 2. class="grid" ile dene
-        if not roster_table:
-            roster_table = soup.find('table', {'class': 'grid'})
+            logger.info("Kadro tablosu ID ile bulundu")
+        else:
+            # Alternatif arama yöntemleri
+            # 1. ID'si "grdKadro" içeren tablo
+            roster_table = soup.find('table', {'id': lambda x: x and 'grdKadro' in x})
             if roster_table:
-                logger.info("Tablo 'grid' class'ı ile bulundu")
-        
-        # 3. ID ile dene
-        if not roster_table:
-            roster_table = soup.find('table', {'id': 'ContentPlaceHolder1_gvOyuncular'})
-            if roster_table:
-                logger.info("Tablo ID ile bulundu")
-        
-        # 4. Herhangi bir tablo içinde "Oyuncu" kelimesi geçen
-        if not roster_table:
-            for table in all_tables:
-                table_text = table.get_text().lower()
-                if 'oyuncu' in table_text or 'futbolcu' in table_text:
-                    roster_table = table
-                    logger.info("Tablo içerik analizi ile bulundu")
-                    break
-        
-        # 5. En büyük tabloyu al (genellikle kadro tablosu en büyüktür)
-        if not roster_table and all_tables:
-            roster_table = max(all_tables, key=lambda x: len(x.find_all('tr')))
-            logger.info("En büyük tablo seçildi")
+                logger.info("Kadro tablosu 'grdKadro' ID'si ile bulundu")
+            
+            # 2. class="table" ile dene
+            if not roster_table:
+                roster_table = soup.find('table', {'class': 'table'})
+                if roster_table:
+                    logger.info("Tablo 'table' class'ı ile bulundu")
+            
+            # 3. class="grid" ile dene
+            if not roster_table:
+                roster_table = soup.find('table', {'class': 'grid'})
+                if roster_table:
+                    logger.info("Tablo 'grid' class'ı ile bulundu")
+            
+            # 4. Herhangi bir tablo içinde "Oyuncu" kelimesi geçen
+            if not roster_table:
+                for table in all_tables:
+                    table_text = table.get_text().lower()
+                    if 'oyuncu' in table_text or 'futbolcu' in table_text:
+                        roster_table = table
+                        logger.info("Tablo içerik analizi ile bulundu")
+                        break
+            
+            # 5. En büyük tabloyu al (genellikle kadro tablosu en büyüktür)
+            if not roster_table and all_tables:
+                roster_table = max(all_tables, key=lambda x: len(x.find_all('tr')))
+                logger.info("En büyük tablo seçildi")
         
         if not roster_table:
             logger.warning("Kadro tablosu bulunamadı")
