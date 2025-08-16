@@ -82,19 +82,7 @@ def get_tff_kayserispor_roster():
         logger.info(f"ViewState uzunluğu: {len(viewstate.get('value', ''))}")
         logger.info(f"EventValidation uzunluğu: {len(eventvalidation.get('value', ''))}")
         
-        # Tüm dropdown'ları bul
-        ddl_sezon = soup.find('select', {'id': lambda x: x and 'ddlSezon' in x})
-        ddl_status = soup.find('select', {'id': lambda x: x and 'ddlStatus' in x})
-        ddl_durum = soup.find('select', {'id': lambda x: x and 'ddlDurum' in x})
-        
-        if ddl_sezon:
-            logger.info(f"Sezon dropdown bulundu: {ddl_sezon.get('id')}")
-        if ddl_status:
-            logger.info(f"Status dropdown bulundu: {ddl_status.get('id')}")
-        if ddl_durum:
-            logger.info(f"Durum dropdown bulundu: {ddl_durum.get('id')}")
-        
-        # Form verilerini hazırla - dinamik olarak ID'leri al
+        # Form verilerini hazırla - sadece gerekli olanları
         form_data = {
             '__VIEWSTATE': viewstate.get('value', ''),
             '__VIEWSTATEGENERATOR': viewstategenerator.get('value', ''),
@@ -103,15 +91,7 @@ def get_tff_kayserispor_roster():
             '__EVENTARGUMENT': '',
         }
         
-        # Dropdown değerlerini ekle
-        if ddl_sezon:
-            form_data[ddl_sezon.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon')] = '2025-2026'
-        if ddl_status:
-            form_data[ddl_status.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus')] = 'Profesyonel'
-        if ddl_durum:
-            form_data[ddl_durum.get('name', 'ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum')] = 'Faal'
-        
-        # Ara butonunu bul
+        # Ara butonunu bul ve ekle
         btn_ara = soup.find('input', {'id': lambda x: x and 'btnAra' in x})
         if btn_ara:
             logger.info(f"Ara butonu bulundu: {btn_ara.get('id')}")
@@ -121,7 +101,6 @@ def get_tff_kayserispor_roster():
         
         # Debug: Form verilerini logla
         logger.info(f"Gönderilecek form verileri: {list(form_data.keys())}")
-        logger.info(f"Dropdown değerleri: Sezon={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlSezon', 'BULUNAMADI')}, Status={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlStatus', 'BULUNAMADI')}, Durum={form_data.get('ctl00$MPane$m_28_196$ctnr$m_28_196$ddlDurum', 'BULUNAMADI')}")
         
         # POST isteği gönder - kadro bilgilerini al
         response = session.post(url, data=form_data, headers=headers, timeout=30)
@@ -146,16 +125,16 @@ def get_tff_kayserispor_roster():
             logger.info("Kadro tablosu ID ile bulundu")
         else:
             # Alternatif arama yöntemleri
-            # 1. takimKadrosuTable class'ı ile dene (en öncelikli)
-            roster_table = soup.find('table', {'class': 'takimKadrosuTable'})
+            # 1. ID'si "grdKadro" içeren tablo
+            roster_table = soup.find('table', {'id': lambda x: x and 'grdKadro' in x})
             if roster_table:
-                logger.info("Kadro tablosu 'takimKadrosuTable' class'ı ile bulundu")
+                logger.info("Kadro tablosu 'grdKadro' ID'si ile bulundu")
             
-            # 2. ID'si "grdKadro" içeren tablo
+            # 2. takimKadrosuTable class'ı ile dene
             if not roster_table:
-                roster_table = soup.find('table', {'id': lambda x: x and 'grdKadro' in x})
+                roster_table = soup.find('table', {'class': 'takimKadrosuTable'})
                 if roster_table:
-                    logger.info("Kadro tablosu 'grdKadro' ID'si ile bulundu")
+                    logger.info("Kadro tablosu 'takimKadrosuTable' class'ı ile bulundu")
             
             # 3. class="table" ile dene
             if not roster_table:
@@ -190,20 +169,27 @@ def get_tff_kayserispor_roster():
             logger.info(f"Sayfa içeriği (ilk 1000 karakter): {page_text}")
             return None
         
-        # Oyuncu bilgilerini çek
+        # Oyuncu bilgilerini çek - farklı yapı için
         players = []
         rows = roster_table.find_all('tr')[1:]  # İlk satır başlık
         
         logger.info(f"Tablo satır sayısı: {len(rows)}")
         
         for row in rows:
-            cells = row.find_all('td')
-            if len(cells) >= 2:  # En az 2 sütun olmalı
+            # Oyuncu linkini bul
+            player_link = row.find('a', {'id': lambda x: x and 'lnkOyuncu' in x})
+            if player_link:
+                player_name = player_link.get_text(strip=True)
+                # Ek bilgileri al (kiralık bilgisi vb.)
+                extra_info = row.find('span', {'id': lambda x: x and '_k' in x})
+                extra_text = extra_info.get_text(strip=True) if extra_info else ''
+                
                 player_info = {
-                    'name': cells[0].get_text(strip=True) if cells[0] else '',
-                    'position': cells[1].get_text(strip=True) if len(cells) > 1 and cells[1] else '',
-                    'birth_date': cells[2].get_text(strip=True) if len(cells) > 2 and cells[2] else '',
-                    'nationality': cells[3].get_text(strip=True) if len(cells) > 3 and cells[3] else ''
+                    'name': player_name,
+                    'extra_info': extra_text,
+                    'position': '',  # Bu tabloda pozisyon yok
+                    'birth_date': '',  # Bu tabloda doğum tarihi yok
+                    'nationality': ''  # Bu tabloda milliyet yok
                 }
                 players.append(player_info)
         
@@ -211,7 +197,8 @@ def get_tff_kayserispor_roster():
         
         # Oyuncu bilgilerini logla
         for i, player in enumerate(players[:10], 1):  # İlk 10 oyuncuyu logla
-            logger.info(f"Oyuncu {i}: {player['name']} - {player['position']} - {player['birth_date']} - {player['nationality']}")
+            extra = f" ({player['extra_info']})" if player['extra_info'] else ""
+            logger.info(f"Oyuncu {i}: {player['name']}{extra}")
         
         if len(players) > 10:
             logger.info(f"... ve {len(players) - 10} oyuncu daha")
